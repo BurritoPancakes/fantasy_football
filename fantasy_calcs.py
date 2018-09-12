@@ -5,6 +5,18 @@ Created on Tue Sep 11 18:42:39 2018
 @author: Mike
 """
 
+
+#Test_this_week:
+new_players_cols = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Att', 'Yds', 'Y/A', 'TD']
+joe_mixon = [['Joe Mixon',22.051,'2018-09-13','NFL','CIN','NaN','BAL', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
+alex_collins = [['Alex Collins',24.018,'2018-09-13','NFL','BAL','@','CIN', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
+new_players = pd.DataFrame(columns = new_players_cols)
+new_players = new_players.append(pd.DataFrame(joe_mixon, columns = new_players_cols),ignore_index = True)
+new_players = new_players.append(pd.DataFrame(alex_collins, columns = new_players_cols),ignore_index = True)
+
+
+#Prev Script
+
 import pandas as pd
 from numpy import loadtxt
 from xgboost import XGBClassifier
@@ -26,6 +38,11 @@ rbs = pd.read_csv('data/rb_stats_15_18.csv')
 rbs.columns = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Att', 'Yds', 'Y/A', 'TD']
 wrs = pd.read_csv('data/wr_stats_15_18.csv')
 wrs.columns = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Tgt', 'Rec', 'Yds', 'Y/R', 'TD', 'Ctch%', 'Y/Tgt']               
+
+#If we have new players add them here
+
+rbs = rbs.append(new_players,ignore_index = True)
+
 
 #Calculating Fantasy Points
 def qb_pts_dk(row):
@@ -135,11 +152,6 @@ rbs_sm['New_Opp'] = rbs_sm.apply(opp_name_change, axis=1)
 wrs_sm['New_Tm'] = wrs_sm.apply(tm_name_change, axis=1)
 wrs_sm['New_Opp'] = wrs_sm.apply(opp_name_change, axis=1)
 
-#One-hot team and opp (might be able to give us indications of which teams are the best at offense and defense?)
-qbs_sm = pd.get_dummies(qbs_sm, columns = ['New_Tm','New_Opp'])
-rbs_sm = pd.get_dummies(rbs_sm, columns = ['New_Tm','New_Opp'])
-wrs_sm = pd.get_dummies(wrs_sm, columns = ['New_Tm','New_Opp'])
-
 #Add variable to show how many fantasy points the defense let up the previous week
 def def_prev_gm_pts(row):
     try:
@@ -158,14 +170,29 @@ def def_prev_gm_pts(row):
 
 rbs_sm['def_prev_gm_pts'] = rbs_sm.apply(def_prev_gm_pts,axis=1)
 
+#One-hot team and opp (might be able to give us indications of which teams are the best at offense and defense?)
+qbs_sm = pd.get_dummies(qbs_sm, columns = ['New_Tm','New_Opp'])
+rbs_sm = pd.get_dummies(rbs_sm, columns = ['New_Tm','New_Opp'])
+wrs_sm = pd.get_dummies(wrs_sm, columns = ['New_Tm','New_Opp'])
+
 #rbs_sm[['Player','Week','Year','New_Tm','New_Opp','Yds','TD','def_prev_gm_pts']][(rbs_sm['Year'] == '15') & (rbs_sm['New_Opp'] == 'LAR')]
 
 #First take on modeling
 
 qbs_mdl = qbs_sm.drop(['Year','New_Tm','New_Opp','Att','Yds','Y/A','TD','Int','Rate'], axis = 1)
-rbs_mdl = rbs_sm.drop(['Year','New_Tm','New_Opp','Att','Yds','Y/A','TD'], axis = 1)
+rbs_mdl = rbs_sm.drop(['Year','Att','Yds','Y/A','TD'], axis = 1)
 wrs_mdl = wrs_sm.drop(['Year','New_Tm','New_Opp','Tgt','Rec','Yds','Y/R','TD'], axis = 1)
 
+
+#Testing on New Players
+curr_year = '18'
+curr_week = 2
+rbs_mdl_pred = rbs_sm[(rbs_sm['Year'] == curr_year) & (rbs_sm['Week'] == curr_week)]
+
+
+#Removing new player from training
+for i in rbs_mdl_pred.index.values:
+    rbs_mdl.drop(i, inplace =True)
 
 #Starting with just rbs_mdl
 
@@ -184,7 +211,7 @@ y = rbs_mdl_trim['dk_pts']
 X = rbs_mdl_trim.drop(['dk_pts'], axis = 1)
 
 # Split the data into train, test, validation 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0)
 
 ##light gb
 #model = XGBClassifier()
@@ -210,7 +237,6 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30)
 from sklearn.linear_model import LinearRegression
 lm = LinearRegression()
 
-X_train.columns
 X_train_sm = X_train[['Age','prev_yr_avg_pts','prev_gm_pts','def_prev_gm_pts']]
 X_test_sm = X_test[['Age','prev_yr_avg_pts','prev_gm_pts','def_prev_gm_pts']]
 
@@ -223,7 +249,13 @@ print(lm.coef_)
 results = pd.DataFrame({'features': X_train_sm.columns, 'estCoefs': lm.coef_})
 
 
-ypred = lm.predict(X_test_sm)
+#ypred = lm.predict(X_test_sm)
+#JUST FOR NEW PEOPLE RIGHT NOW. VERY UNORGANIZED
+rbs_mdl_pred_final = rbs_mdl_pred[['Age','prev_yr_avg_pts','prev_gm_pts','def_prev_gm_pts']]
+ypred = lm.predict(rbs_mdl_pred_final)
+joined = rbs_mdl_pred.join(pd.DataFrame({'predictions':ypred}))
+
+
 
 pred_results = pd.DataFrame({'predictions': ypred,'actual': y_test})
 
@@ -231,9 +263,9 @@ pred_results = pd.DataFrame({'predictions': ypred,'actual': y_test})
 join_back = rbs_sm.join(pred_results)
 join_back = join_back.dropna()
 #
-week = 5
-year = '17'
+week = 7
+year = '16'
 #
-join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','New_Tm','New_Opp','Att','Yds','TD','def_prev_gm_yds','prev_gm_pts','actual','predictions']].head(10)
-join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','New_Tm','New_Opp','Att','Yds','TD','def_prev_gm_yds','prev_gm_pts','actual','predictions']].head(10)
+join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_pts','prev_gm_pts','actual','predictions']].head(10)
+join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','New_Tm','New_Opp','Att','Yds','TD','def_prev_gm_pts','prev_gm_pts','actual','predictions']].head(10)
 
