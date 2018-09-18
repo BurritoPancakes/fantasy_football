@@ -17,13 +17,24 @@ Created on Tue Sep 11 18:42:39 2018
 #Test_this_week:
 #If we have new players add them here
 
-new_players_cols = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Att', 'Yds', 'Y/A', 'TD']
-joe_mixon = [['Joe Mixon',22.051,'2018-09-13','NFL','CIN','NaN','BAL', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
-alex_collins = [['Alex Collins',24.018,'2018-09-13','NFL','BAL','@','CIN', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
-new_players = pd.DataFrame(columns = new_players_cols)
-new_players = new_players.append(pd.DataFrame(joe_mixon, columns = new_players_cols),ignore_index = True)
-new_players = new_players.append(pd.DataFrame(alex_collins, columns = new_players_cols),ignore_index = True)
-rbs = rbs.append(new_players,ignore_index = True)
+#new_players_cols = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Att', 'Yds', 'Y/A', 'TD']
+#joe_mixon = [['Joe Mixon',22.051,'2018-09-13','NFL','CIN','NaN','BAL', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
+#alex_collins = [['Alex Collins',24.018,'2018-09-13','NFL','BAL','@','CIN', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
+#new_players = pd.DataFrame(columns = new_players_cols)
+#new_players = new_players.append(pd.DataFrame(joe_mixon, columns = new_players_cols),ignore_index = True)
+#new_players = new_players.append(pd.DataFrame(alex_collins, columns = new_players_cols),ignore_index = True)
+#rbs = rbs.append(new_players,ignore_index = True)
+
+
+#Use this link to scrape the players and their positions:
+https://www.pro-football-reference.com/years/2018/fantasy.htm
+#Use this link to scrape the upcoming games for next week (get team names and then grab all the players by team code)
+    #Get date and teams
+https://www.pro-football-reference.com/years/2018/week_3.htm
+
+
+#New way of creating dataframes:
+    #Get rid of players who don't play. Only make model for top X players at each position (but still get their rushing, receiving, and passing stats)
 
 
 #Imports
@@ -107,10 +118,18 @@ def prev_qb_gm_dk_pts(row):
     return (week_one + week_two + week_three)/3
 def prev_rb_gm_dk_pts(row):
     try:
-        value = rbs_sm[(rbs_sm['Player'] == row['Player']) & (rbs_sm['Year'] == row['Year']) & (rbs_sm['Week'] == row['Week']-1)]['dk_pts'].values[0]
+        week_one = rbs_sm[(rbs_sm['Player'] == row['Player']) & (rbs_sm['Year'] == row['Year']) & (rbs_sm['Week'] == row['Week']-1)]['dk_pts'].values[0]
     except IndexError:
-        value = 0
-    return value
+        week_one = 0
+    try:
+        week_two = rbs_sm[(rbs_sm['Player'] == row['Player']) & (rbs_sm['Year'] == row['Year']) & (rbs_sm['Week'] == row['Week']-2)]['dk_pts'].values[0]
+    except IndexError:
+        week_two = 0
+    try:
+        week_three = rbs_sm[(rbs_sm['Player'] == row['Player']) & (rbs_sm['Year'] == row['Year']) & (rbs_sm['Week'] == row['Week']-3)]['dk_pts'].values[0]
+    except IndexError:
+        week_three = 0
+    return (week_one + week_two + week_three)/3
 def prev_wr_gm_dk_pts(row):
     try:
         week_one = wrs_sm[(wrs_sm['Player'] == row['Player']) & (wrs_sm['Year'] == row['Year']) & (wrs_sm['Week'] == row['Week']-1)]['dk_pts'].values[0]
@@ -237,14 +256,20 @@ def qb_def_prev_gm_rank(row):
     curr_week = row['Week']
     curr_year = row['Year']
     opp = row['Opp']
-    try:
-        if(full_qb_def.loc[curr_year + '_' + str(curr_week - 1),opp] == 999):
-            rank = full_qb_def.loc[curr_year + '_' + str(curr_week - 2),opp]
-        else:
-            rank = full_qb_def.loc[curr_year + '_' + str(curr_week - 1),opp]
-    except KeyError:
-        rank = 0
-    return rank
+    avg_rank = []
+    for value in [1,2,3]:
+        try:
+            if(full_qb_def.loc[curr_year + '_' + str(curr_week - value),opp] == 999):
+                rank = full_qb_def.loc[curr_year + '_' + str(curr_week - (value-1)),opp]
+            else:
+                rank = full_qb_def.loc[curr_year + '_' + str(curr_week - value),opp]
+        except KeyError:
+            if(curr_year == '15'):
+                rank = 0
+            else:
+                rank = full_qb_def.loc[str(int(curr_year)-1) + '_' + str(17-value),opp]
+        avg_rank.append(rank)
+    return sum(avg_rank)/len(avg_rank)
 
 qbs_sm['def_prev_gm_qb_rank'] = qbs_sm.apply(qb_def_prev_gm_rank,axis=1)
 
@@ -252,29 +277,41 @@ def rb_def_prev_gm_rank(row):
     curr_week = row['Week']
     curr_year = row['Year']
     opp = row['Opp']
-    try:
-        if(full_rb_def.loc[curr_year + '_' + str(curr_week - 1),opp] == 999):
-            rank = full_rb_def.loc[curr_year + '_' + str(curr_week - 2),opp]
-        else:
-            rank = full_rb_def.loc[curr_year + '_' + str(curr_week - 1),opp]
-    except KeyError:
-        rank = 0
-    return rank
+    avg_rank = []
+    for value in [1,2,3]:
+        try:
+            if(full_rb_def.loc[curr_year + '_' + str(curr_week - value),opp] == 999):
+                rank = full_rb_def.loc[curr_year + '_' + str(curr_week - (value-1)),opp]
+            else:
+                rank = full_rb_def.loc[curr_year + '_' + str(curr_week - value),opp]
+        except KeyError:
+            if(curr_year == '15'):
+                rank = 0
+            else:
+                rank = full_rb_def.loc[str(int(curr_year)-1) + '_' + str(17-value),opp]
+        avg_rank.append(rank)
+    return sum(avg_rank)/len(avg_rank)
 
-rbs_sm['def_prev_gm_rank'] = rbs_sm.apply(rb_def_prev_gm_rank,axis=1)
+rbs_sm['def_prev_gm_rb_rank'] = rbs_sm.apply(rb_def_prev_gm_rank,axis=1)
 
 def wr_def_prev_gm_rank(row):
     curr_week = row['Week']
     curr_year = row['Year']
     opp = row['Opp']
-    try:
-        if(full_wr_def.loc[curr_year + '_' + str(curr_week - 1),opp] == 999):
-            rank = full_wr_def.loc[curr_year + '_' + str(curr_week - 2),opp]
-        else:
-            rank = full_wr_def.loc[curr_year + '_' + str(curr_week - 1),opp]
-    except KeyError:
-        rank = 0
-    return rank
+    avg_rank = []
+    for value in [1,2,3]:
+        try:
+            if(full_wr_def.loc[curr_year + '_' + str(curr_week - value),opp] == 999):
+                rank = full_wr_def.loc[curr_year + '_' + str(curr_week - (value-1)),opp]
+            else:
+                rank = full_wr_def.loc[curr_year + '_' + str(curr_week - value),opp]
+        except KeyError:
+            if(curr_year == '15'):
+                rank = 0
+            else:
+                rank = full_wr_def.loc[str(int(curr_year)-1) + '_' + str(17-value),opp]
+        avg_rank.append(rank)
+    return sum(avg_rank)/len(avg_rank)
 
 wrs_sm['def_prev_gm_wr_rank'] = wrs_sm.apply(wr_def_prev_gm_rank,axis=1)
 #Create dataframe
@@ -287,7 +324,7 @@ wrs_sm['prev_yr_avg_dk_pts'] = wrs_sm.apply(prev_wr_yr_dk_pts,axis=1)
 
 #Filling points in prev game
 qbs_sm['prev_three_gm_pts'] = qbs_sm.apply(prev_qb_gm_dk_pts,axis=1)
-rbs_sm['prev_gm_pts'] = rbs_sm.apply(prev_rb_gm_dk_pts,axis=1)
+rbs_sm['prev_three_gm_pts'] = rbs_sm.apply(prev_rb_gm_dk_pts,axis=1)
 wrs_sm['prev_three_gm_pts'] = wrs_sm.apply(prev_wr_gm_dk_pts,axis=1)
 
 
@@ -339,28 +376,28 @@ wrs_mdl = wrs_sm.drop(['Year','Tm','Opp','Tgt','Rec','Yds','Y/R','TD'], axis = 1
 
 #label encoding players
 
-qbs_mdl_trim = qbs_mdl.select_dtypes(exclude=['object'])
-players = qbs_mdl.select_dtypes(include=['object'])
+rbs_mdl_trim = rbs_mdl.select_dtypes(exclude=['object'])
+players = rbs_mdl.select_dtypes(include=['object'])
 d = defaultdict(LabelEncoder)
 fit = players.apply(lambda x: d[x.name].fit_transform(x))
 model_df = players.apply(lambda x: d[x.name].transform(x))
 model_df = model_df[players.columns]
-qbs_mdl_trim = pd.concat([qbs_mdl_trim.reset_index(drop=True), model_df], axis=1)
+rbs_mdl_trim = pd.concat([rbs_mdl_trim.reset_index(drop=True), model_df], axis=1)
 
 #Modeling begins here
-y = qbs_mdl_trim['dk_pts']
-X = qbs_mdl_trim.drop(['dk_pts'], axis = 1)
+y = rbs_mdl_trim['dk_pts']
+X = rbs_mdl_trim.drop(['dk_pts'], axis = 1)
 
 # Split the data into train, test, validation 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.3)
 
 
 #LinearRegression
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import LinearRegression
 lm = LinearRegression()
 
-X_train_sm = X_train[['Age', 'Away', 'Week','def_prev_gm_qb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
-X_test_sm = X_test[['Age', 'Away', 'Week','def_prev_gm_qb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
+X_train_sm = X_train[['Age', 'Away', 'Week','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
+X_test_sm = X_test[['Age', 'Away', 'Week','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
 
 
 lm.fit(X_train_sm,y_train)
@@ -374,14 +411,14 @@ results = pd.DataFrame({'features': X_train_sm.columns, 'estCoefs': lm.coef_})
 ypred = lm.predict(X_test_sm)
 pred_results = pd.DataFrame({'predictions': ypred,'actual': y_test})
 
-join_back = qbs_sm.join(pred_results)
+join_back = rbs_sm.join(pred_results)
 join_back = join_back.dropna()
 #
-week = 8
-year = '17'
+week = 12
+year = '16'
 #
-join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Int','Yds','TD','def_prev_gm_qb_rank','prev_three_gm_pts','actual','predictions']].head(10)
-join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Int','Yds','TD','def_prev_gm_qb_rank','prev_three_gm_pts','actual','predictions']].head(10)
+join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','actual','predictions']].head(10)
+join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','actual','predictions']].head(10)
 
 
 
