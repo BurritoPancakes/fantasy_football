@@ -26,12 +26,6 @@ Created on Tue Sep 11 18:42:39 2018
 #rbs = rbs.append(new_players,ignore_index = True)
 
 
-#Use this link to scrape the players and their positions:
-https://www.pro-football-reference.com/years/2018/fantasy.htm
-#Use this link to scrape the upcoming games for next week (get team names and then grab all the players by team code)
-    #Get date and teams
-https://www.pro-football-reference.com/years/2018/week_3.htm
-
 
 #New way of creating dataframes:
     #Get rid of players who don't play. Only make model for top X players at each position (but still get their rushing, receiving, and passing stats)
