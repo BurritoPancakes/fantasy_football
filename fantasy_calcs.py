@@ -390,8 +390,12 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.3)
 from sklearn.linear_model import LinearRegression
 lm = LinearRegression()
 
-X_train_sm = X_train[['Age', 'Away', 'Week','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
-X_test_sm = X_test[['Age', 'Away', 'Week','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
+
+#ADD IN AVG # OF TD'S IN LAST X WEEKS
+#ADD IN AVG # ATTEMPTS/TGTS IN PAST X WEEKS
+#Figure out how to capture that X factor which separates people a little more need to predict outliers?
+X_train_sm = X_train[['Age', 'Away','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
+X_test_sm = X_test[['Age', 'Away','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
 
 
 lm.fit(X_train_sm,y_train)
@@ -408,8 +412,8 @@ pred_results = pd.DataFrame({'predictions': ypred,'actual': y_test})
 join_back = rbs_sm.join(pred_results)
 join_back = join_back.dropna()
 #
-week = 12
-year = '16'
+week = 1
+year = '18'
 #
 join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','actual','predictions']].head(10)
 join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','actual','predictions']].head(10)

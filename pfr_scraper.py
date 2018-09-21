@@ -9,7 +9,7 @@ class PFRScraper(object):
     """
     initiates a web scraper for Pro-Football-Reference Website
     """
-    def __init__(self, driver_path='../webdrivers/chromedriver'):
+    def __init__(self, driver_path='webdrivers/chromedriver'):
         self.driver_path = driver_path
         self.year_range = [2015,2016,2017,2018]
         self.week_num = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]
@@ -134,9 +134,8 @@ class PFRScraper(object):
 
         #All player info:
 
-        players = pd.DataFrame()
-
         for year in self.year_range:
+            players = pd.DataFrame()
             driver.get(f"https://www.pro-football-reference.com/years/{year}/fantasy.htm")
             soup = BeautifulSoup(driver.page_source,"html.parser")
             stats_table = soup.find('table', id = 'fantasy') 
