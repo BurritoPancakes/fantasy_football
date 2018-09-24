@@ -14,24 +14,12 @@ Created on Tue Sep 11 18:42:39 2018
     #etc.
 
 
-#Test_this_week:
-#If we have new players add them here
-
-#new_players_cols = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Att', 'Yds', 'Y/A', 'TD']
-#joe_mixon = [['Joe Mixon',22.051,'2018-09-13','NFL','CIN','NaN','BAL', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
-#alex_collins = [['Alex Collins',24.018,'2018-09-13','NFL','BAL','@','CIN', 'No Idea', 2, 2, 'Thu', 9999,9999,9999,9999]]
-#new_players = pd.DataFrame(columns = new_players_cols)
-#new_players = new_players.append(pd.DataFrame(joe_mixon, columns = new_players_cols),ignore_index = True)
-#new_players = new_players.append(pd.DataFrame(alex_collins, columns = new_players_cols),ignore_index = True)
-#rbs = rbs.append(new_players,ignore_index = True)
-
-
-
 #New way of creating dataframes:
     #Get rid of players who don't play. Only make model for top X players at each position (but still get their rushing, receiving, and passing stats)
 
 
 #Imports
+import re
 import pandas as pd
 from numpy import loadtxt
 from xgboost import XGBClassifier
@@ -95,7 +83,7 @@ def prev_wr_yr_dk_pts(row):
         value = 0
     return value
 
-#Calculating points for each player for the previous game
+#Calculating points for each player for the previous three games
 def prev_qb_gm_dk_pts(row):
     try:
         week_one = qbs_sm[(qbs_sm['Player'] == row['Player']) & (qbs_sm['Year'] == row['Year']) & (qbs_sm['Week'] == row['Week']-1)]['dk_pts'].values[0]
@@ -140,6 +128,15 @@ def prev_wr_gm_dk_pts(row):
     return (week_one + week_two + week_three)/3
 
 
+#Figuring out who goes in the model
+players = pd.DataFrame()
+for year in ['2015','2016','2017','2018']:
+    players_yr = pd.read_csv(f'data/player_info_{year}.csv')
+    players = players.append(players_yr)
+
+players = players[players['FantPt'] >= 30]
+players = players['Player'].unique()
+players = [re.sub("[^ \w.]"," ",y).strip() for y in players]
 
 #conversion df
 off_pts = pd.DataFrame(data = {'cat': ['pass_td','pass_yds','300_pass_yds','int','rush_td','rush_yds','100_rush_yds','rec_td','rec_yds','100_rec_yds','rec','ret_td','fum_lost','2_pt_conv','off_fum_rec_td'],'pts': [4,.04,3,-1,6,.1,3,6,.1,3,1,6,-1,2,6]})
@@ -147,10 +144,13 @@ off_pts = pd.DataFrame(data = {'cat': ['pass_td','pass_yds','300_pass_yds','int'
 #read in stats_dfs and fix column names
 qbs = pd.read_csv('data/qb_stats_15_18.csv')
 qbs.columns = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Cmp', 'Att', 'Cmp%', 'Yds', 'TD', 'Int', 'Rate', 'Sk', 'Yds.1', 'Y/A', 'AY/A']
+qbs = qbs[qbs['Player'].isin(players)]
 rbs = pd.read_csv('data/rb_stats_15_18.csv')
 rbs.columns = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Att', 'Yds', 'Y/A', 'TD']
+rbs = rbs[rbs['Player'].isin(players)]
 wrs = pd.read_csv('data/wr_stats_15_18.csv')
 wrs.columns = ['Player', 'Age', 'Year', 'Lg', 'Tm', 'Away', 'Opp', 'Result', 'G#', 'Week', 'Day', 'Tgt', 'Rec', 'Yds', 'Y/R', 'TD', 'Ctch%', 'Y/Tgt']               
+wrs = wrs[wrs['Player'].isin(players)]
 
 
 #Calculating how many fantasy points a player got
@@ -172,7 +172,7 @@ rbs_sm['Opp'] = rbs_sm.apply(opp_name_change, axis=1)
 wrs_sm['Tm'] = wrs_sm.apply(tm_name_change, axis=1)
 wrs_sm['Opp'] = wrs_sm.apply(opp_name_change, axis=1)
 
-#Fixing and deleting a few other features
+#Fixing and deleting a few other features (Year, Away, Day)
 qbs_sm['Year'] = qbs_sm['Year'].str[2:4]
 rbs_sm['Year'] = rbs_sm['Year'].str[2:4]
 wrs_sm['Year'] = wrs_sm['Year'].str[2:4]
@@ -223,7 +223,9 @@ for item in full_rb_def.index:
             full_rb_def.loc[item,team] = temp_df['level_0'][temp_df['Opp'] == team].values[0]
         except IndexError:
             full_rb_def.loc[item,team] = 999
-            
+
+#Weird error with this value so I am setting it here. Will look into later.  
+full_rb_def.loc['16_14','BUF'] = 31        
             
 wr_def = wrs_sm.groupby(['Opp','Year','Week']).sum()[['dk_pts']].reset_index()
 
@@ -245,7 +247,7 @@ for item in full_wr_def.index:
             full_wr_def.loc[item,team] = 999
      
         
-#Adding DEF prev week Ranking
+#Adding DEF prev 3 week avg. ranking
 def qb_def_prev_gm_rank(row):
     curr_week = row['Week']
     curr_year = row['Year']
@@ -308,7 +310,6 @@ def wr_def_prev_gm_rank(row):
     return sum(avg_rank)/len(avg_rank)
 
 wrs_sm['def_prev_gm_wr_rank'] = wrs_sm.apply(wr_def_prev_gm_rank,axis=1)
-#Create dataframe
 
 #Filling points/game from prev year
 qbs_sm['prev_yr_avg_dk_pts'] = qbs_sm.apply(prev_qb_yr_dk_pts,axis=1)
@@ -316,81 +317,62 @@ rbs_sm['prev_yr_avg_dk_pts'] = rbs_sm.apply(prev_rb_yr_dk_pts,axis=1)
 wrs_sm['prev_yr_avg_dk_pts'] = wrs_sm.apply(prev_wr_yr_dk_pts,axis=1)
 
 
-#Filling points in prev game
+#Filling points in prev 3 games
 qbs_sm['prev_three_gm_pts'] = qbs_sm.apply(prev_qb_gm_dk_pts,axis=1)
 rbs_sm['prev_three_gm_pts'] = rbs_sm.apply(prev_rb_gm_dk_pts,axis=1)
 wrs_sm['prev_three_gm_pts'] = wrs_sm.apply(prev_wr_gm_dk_pts,axis=1)
 
 
-#Opponents DEF rank. Not sure where to get data for this.
+#Taking out 2015 since all our good variables are all zeroes
+rbs_sm_mdl = rbs_sm[rbs_sm['Year'] != '15']
+rbs_sm_mdl = rbs_sm_mdl[rbs_sm_mdl['Att'] > 3]
 
-#Add variable to show how many fantasy points the defense let up the previous week
-#def def_prev_gm_pts(row):
-#    try:
-#        value = rbs_sm[rbs_sm['Opp'] == row['Opp']].groupby(['Week','Year']).sum()['dk_pts'][row['Week']-1][row['Year']]
-#    except KeyError:
-#        try:
-#            value = rbs_sm[rbs_sm['Opp'] == row['Opp']].groupby(['Week','Year']).sum()['dk_pts'][row['Week']-2][row['Year']]
-#        except IndexError:
-#            value = rbs_sm[rbs_sm['Opp'] == row['Opp']].groupby(['Week','Year']).sum()['dk_pts'][16][str(int(row['Year'])-1)]
-#    except IndexError:
-#        try:
-#            value = rbs_sm[rbs_sm['Opp'] == row['Opp']].groupby(['Week','Year']).sum()['dk_pts'][16][str(int(row['Year'])-1)]
-#        except KeyError:
-#            value = 0
-#    return value 
-#
-#rbs_sm['def_prev_gm_pts'] = rbs_sm.apply(def_prev_gm_pts,axis=1)
-
-#One-hot team and opp (might be able to give us indications of which teams are the best at offense and defense?)
-#qbs_sm = pd.get_dummies(qbs_sm, columns = ['Tm','Opp'])
-#rbs_sm = pd.get_dummies(rbs_sm, columns = ['Tm','Opp'])
-#wrs_sm = pd.get_dummies(wrs_sm, columns = ['Tm','Opp'])
-
-#rbs_sm[['Player','Week','Year','Tm','Opp','Yds','TD','def_prev_gm_pts']][(rbs_sm['Year'] == '15') & (rbs_sm['Opp'] == 'LAR')]
 
 #First take on modeling
-
 qbs_mdl = qbs_sm.drop(['Year','Tm','Opp','Att','Yds','Y/A','TD','Int','Rate'], axis = 1)
-rbs_mdl = rbs_sm.drop(['Year','Att','Yds','Y/A','TD'], axis = 1)
+rbs_mdl = rbs_sm_mdl.drop(['Player','Tm','Opp','Year','Att','Yds','Y/A','TD'], axis = 1)
 wrs_mdl = wrs_sm.drop(['Year','Tm','Opp','Tgt','Rec','Yds','Y/R','TD'], axis = 1)
 
 
-##Testing on New Players
-#curr_year = '18'
-#curr_week = 2
-#rbs_mdl_pred = rbs_sm[(rbs_sm['Year'] == curr_year) & (rbs_sm['Week'] == curr_week)]
-#
-#
-##Removing new player from training
-#for i in rbs_mdl_pred.index.values:
-#    rbs_mdl.drop(i, inplace =True)
-
 #Starting with just rbs_mdl
+    #Remove people who have very few attempts? (less than 3?)
+    #Remove people
+
 
 #label encoding players
-
-rbs_mdl_trim = rbs_mdl.select_dtypes(exclude=['object'])
-players = rbs_mdl.select_dtypes(include=['object'])
-d = defaultdict(LabelEncoder)
-fit = players.apply(lambda x: d[x.name].fit_transform(x))
-model_df = players.apply(lambda x: d[x.name].transform(x))
-model_df = model_df[players.columns]
-rbs_mdl_trim = pd.concat([rbs_mdl_trim.reset_index(drop=True), model_df], axis=1)
+#rbs_mdl_trim = rbs_mdl.select_dtypes(exclude=['object'])
+#players = rbs_mdl.select_dtypes(include=['object'])
+#d = defaultdict(LabelEncoder)
+#fit = players.apply(lambda x: d[x.name].fit_transform(x))
+#model_df = players.apply(lambda x: d[x.name].transform(x))
+#model_df = model_df[players.columns]
+#rbs_mdl_trim = pd.concat([rbs_mdl_trim.reset_index(drop=True), model_df], axis=1)
 
 #Modeling begins here
-y = rbs_mdl_trim['dk_pts']
-X = rbs_mdl_trim.drop(['dk_pts'], axis = 1)
+y = rbs_mdl.loc[:,'dk_pts']
+X = rbs_mdl.drop(['dk_pts'], axis = 1)
+
+y[y <= 0] = .2
+log_y = np.log(log_y)
 
 # Split the data into train, test, validation 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.3)
+X_train, X_test, y_train, y_test = train_test_split(X, log_y, test_size=.3)
 
 
+#Try GLM or Poisson models instead of linear because the outcome variable is skewed
+import matplotlib.pyplot as plt
+plt.hist(y_train)
 #LinearRegression
 from sklearn.linear_model import LinearRegression
 lm = LinearRegression()
+#import statsmodels.api as sm
+## Instantiate a gamma family model with the default link function.
+#gamma_model = sm.GLM()
+#gamma_model = sm.GLM(data.endog, data.exog, family=sm.families.Gamma())
+#gamma_results = gamma_model.fit()
+#print(gamma_results.summary())
 
-
+    
 #ADD IN AVG # OF TD'S IN LAST X WEEKS
 #ADD IN AVG # ATTEMPTS/TGTS IN PAST X WEEKS
 #Figure out how to capture that X factor which separates people a little more need to predict outliers?
@@ -409,15 +391,26 @@ results = pd.DataFrame({'features': X_train_sm.columns, 'estCoefs': lm.coef_})
 ypred = lm.predict(X_test_sm)
 pred_results = pd.DataFrame({'predictions': ypred,'actual': y_test})
 
-join_back = rbs_sm.join(pred_results)
+join_back = rbs_sm_mdl.join(pred_results)
 join_back = join_back.dropna()
 #
-week = 1
-year = '18'
+week = 14
+year = '16'
 #
-join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','actual','predictions']].head(10)
-join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','actual','predictions']].head(10)
+join_back.sort_values(['predictions'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_yr_avg_dk_pts','prev_three_gm_pts','dk_pts','predictions']].head(10)
+join_back.sort_values(['actual'], ascending = False)[(join_back['Year'] == year) & (join_back['G#'] == week)][['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_three_gm_pts','dk_pts','predictions']].head(10)
 
 
 
 output_preds_rb = join_back[['Player','Year','G#','Opp','Tm','predictions']]
+
+
+
+
+#Plotting variables against coefficients
+import matplotlib.pyplot as plt
+plt.scatter(rbs_sm_mdl['def_prev_gm_rb_rank'],rbs_sm_mdl['dk_pts'])
+
+
+join_back.sort_values(['predictions'], ascending = False)[['Player','G#','Year','Tm','Opp','Att','Yds','TD','def_prev_gm_rb_rank','prev_yr_avg_dk_pts','prev_three_gm_pts','actual','predictions']].head(10)
+

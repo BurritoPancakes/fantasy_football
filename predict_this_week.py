@@ -32,7 +32,7 @@ import pandas as pd
     
     
 year = 2018
-week = 3
+week = 4
     
 driver = webdriver.Chrome(executable_path='webdrivers/chromedriver')
 driver.get(f"https://www.pro-football-reference.com/years/{year}/week_{week}.htm")
@@ -49,6 +49,8 @@ for matchup in week_games:
     
     all_matchups = all_matchups.append(matchup_df)
     
+driver.close()
+
 all_matchups = all_matchups.reset_index(drop = True)
 all_matchups['Away'] = '@'
 
