@@ -21,6 +21,7 @@ Created on Tue Sep 11 18:42:39 2018
 #Imports
 import re
 import pandas as pd
+import numpy as np
 from numpy import loadtxt
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
@@ -322,15 +323,61 @@ qbs_sm['prev_three_gm_pts'] = qbs_sm.apply(prev_qb_gm_dk_pts,axis=1)
 rbs_sm['prev_three_gm_pts'] = rbs_sm.apply(prev_rb_gm_dk_pts,axis=1)
 wrs_sm['prev_three_gm_pts'] = wrs_sm.apply(prev_wr_gm_dk_pts,axis=1)
 
+#Adding in Vegas Odds Data
+#HARD CODED DATES HERE. WHOOPS
+vegas_odds = pd.read_csv('data/vegas_odds_15_18.csv')
+vegas_odds = vegas_odds.drop_duplicates(['Date','Favorite','Spread','Underdog','Away Money Line','Home Money Line'])
+#vegas_odds = vegas_odds[vegas_odds['Total'] != 'OFF']
+del vegas_odds['Date']
+
+
+def vegas_matchups(row):
+    if(row['Favorite'].startswith('at ')):
+        home = 1
+    else:
+        home = 0   
+    return home
+
+vegas_odds['Home'] = vegas_odds.apply(vegas_matchups, axis=1)
+vegas_odds['Favorite'] = vegas_odds['Favorite'].map(lambda x: x.lstrip('at '))
+vegas_odds['Underdog'] = vegas_odds['Underdog'].map(lambda x: x.lstrip('at '))
+
+full_tm_names = ['Jets','Titans','Giants','Packers','Bengals','Broncos','Saints',
+ 'Colts','Bills','Raiders','49ers','Chargers','Bears','Cowboys','Patriots',
+ 'Steelers','Browns','Jaguars','Texans','Redskins','Panthers','Ravens',
+ 'Falcons','Eagles','Vikings','Dolphins','Chiefs','Rams','Cardinals',
+ 'Seahawks','Lions','Buccaneers']
+abb_tm_name =['NYJ','TEN','NYG','GNB','CIN','DEN','NOR','IND','BUF','OAK','SFO','LAC','CHI','DAL','NWE','PIT','CLE','JAX','HOU','WAS','CAR',
+              'BAL','ATL','PHI','MIN','MIA','KAN','LAR','ARI','SEA','DET','TAM']
+team_conv_df = pd.DataFrame({'full_name':full_tm_names,'abb_name':abb_tm_name})
+
+matchups = vegas_odds.merge(team_conv_df, left_on = 'Favorite',right_on = 'full_name')[['abb_name','Home','Underdog','Year','Week','Home Money Line','Away Money Line','Spread','Total']]
+matchups.columns = ['Favorite','Home','Underdog','Year','Week','Home Money Line','Away Money Line','Spread','Total']
+matchups = matchups.merge(team_conv_df, left_on = 'Underdog',right_on = 'full_name')[['Favorite','Home','abb_name','Year','Week','Home Money Line','Away Money Line','Spread','Total']]
+matchups.columns = ['Favorite','Home','Underdog','Year','Week','Home Money Line','Away Money Line','Spread','Total']
+matchups['Year'] = matchups['Year'].apply(str)
+matchups['Year'] = matchups['Year'].str[2:]
+
+#Combining Vegas data to model data
+
+testx = rbs_sm.merge(matchups, left_on = ['Tm','Year','Week'],right_on = ['Favorite','Year','Week'])[['Player','Age','Year','Tm','Away','Opp','G#','Week','Att','Yds','def_prev_gm_rb_rank','prev_yr_avg_dk_pts','prev_three_gm_pts','Spread','Total','Home','dk_pts']]
+testx['proj_team_pts'] = (testx['Total'] - testx['Spread'])/2
+testy = rbs_sm.merge(matchups, left_on = ['Tm','Year','Week'],right_on = ['Underdog','Year','Week'])[['Player','Age','Year','Tm','Away','Opp','G#','Week','Att','Yds','def_prev_gm_rb_rank','prev_yr_avg_dk_pts','prev_three_gm_pts','Spread','Total','Home','dk_pts']]
+testy['proj_team_pts'] = (testy['Total'] + testy['Spread'])/2
+
+final_vegas = testx.append(testy, ignore_index = True)
+del final_vegas['Home']
+del final_vegas['Spread']
+
 
 #Taking out 2015 since all our good variables are all zeroes
-rbs_sm_mdl = rbs_sm[rbs_sm['Year'] != '15']
+rbs_sm_mdl = final_vegas[final_vegas['Year'] != '15']
 rbs_sm_mdl = rbs_sm_mdl[rbs_sm_mdl['Att'] > 3]
 
 
 #First take on modeling
 qbs_mdl = qbs_sm.drop(['Year','Tm','Opp','Att','Yds','Y/A','TD','Int','Rate'], axis = 1)
-rbs_mdl = rbs_sm_mdl.drop(['Player','Tm','Opp','Year','Att','Yds','Y/A','TD'], axis = 1)
+rbs_mdl = rbs_sm_mdl.drop(['Player','Tm','Opp','Year','Att','Yds'], axis = 1)
 wrs_mdl = wrs_sm.drop(['Year','Tm','Opp','Tgt','Rec','Yds','Y/R','TD'], axis = 1)
 
 
@@ -353,7 +400,7 @@ y = rbs_mdl.loc[:,'dk_pts']
 X = rbs_mdl.drop(['dk_pts'], axis = 1)
 
 y[y <= 0] = .2
-log_y = np.log(log_y)
+log_y = np.log(y)
 
 # Split the data into train, test, validation 
 X_train, X_test, y_train, y_test = train_test_split(X, log_y, test_size=.3)
@@ -376,8 +423,8 @@ lm = LinearRegression()
 #ADD IN AVG # OF TD'S IN LAST X WEEKS
 #ADD IN AVG # ATTEMPTS/TGTS IN PAST X WEEKS
 #Figure out how to capture that X factor which separates people a little more need to predict outliers?
-X_train_sm = X_train[['Age', 'Away','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
-X_test_sm = X_test[['Age', 'Away','Day_Thu','Day_Mon','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts']]
+X_train_sm = X_train[['Age', 'Away','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts','Total','proj_team_pts']]
+X_test_sm = X_test[['Age', 'Away','def_prev_gm_rb_rank', 'prev_yr_avg_dk_pts','prev_three_gm_pts','Total','proj_team_pts']]
 
 
 lm.fit(X_train_sm,y_train)

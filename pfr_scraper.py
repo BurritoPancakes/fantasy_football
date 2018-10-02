@@ -4,6 +4,10 @@ import pandas as pd
 
 #from selenium.webdriver.support.ui import WebDriverWait
 
+#Use this link to get over/under and spread for every game
+    #Season = Year, SeasonType = 1 (Regular season), Week = Week
+    #https://fantasydata.com/nfl-stats/point-spreads-and-odds?season=2016&seasontype=1&week=1
+
 
 class PFRScraper(object):
     """
@@ -156,6 +160,49 @@ class PFRScraper(object):
         driver.close() 
         
         return 
+    
+    
+#Use this link to get over/under and spread for every game
+    #Season = Year, SeasonType = 1 (Regular season), Week = Week
+    #https://fantasydata.com/nfl-stats/point-spreads-and-odds?season=2016&seasontype=1&week=1
+    
+    def get_vegas_odds(self):    
+        """
+        scrapes vegas odds for each game (over/under)
+        """
+
+        driver = webdriver.Chrome(executable_path=self.driver_path)
+
+        #All player info:
+
+        vegas_odds = pd.DataFrame()
+            
+        for year in self.year_range:
+            for week in self.week_num:
+                driver.get(f"https://fantasydata.com/nfl-stats/point-spreads-and-odds?season={year}&seasontype=1&week={week}")
+                soup = BeautifulSoup(driver.page_source,"html.parser")
+                stats_table = soup.find('div', id = 'stats_grid') 
+                header = stats_table.find('thead')
+                headers = [head.text for head in header.find_all('th')]
+                rows = []
+                for row in stats_table.find_all('tr'):
+                    rows.append([val.text for val in row.find_all('td')])
+
+                rows = rows[1:]
+                vegas_temp = pd.DataFrame(data = rows, columns = headers)
+                vegas_temp['Year'] = year
+                vegas_temp['Week'] = week
+                vegas_odds = vegas_odds.append(vegas_temp, ignore_index = True)
+
+        
+        driver.close() 
+ 
+        vegas_odds_final = vegas_odds.dropna()
+        vegas_odds_final = vegas_odds_final.drop_duplicates()
+        vegas_odds_final.to_csv(f'data/vegas_odds_{str(self.year_range[0])[2:]}_{str(self.year_range[-1])[2:]}.csv', index = False)
+
+        return                   
+           
 
     
 test = PFRScraper()
@@ -163,5 +210,6 @@ test = PFRScraper()
 #test.scrape_wrs()
 #test.scrape_rbs()
 #test.scrape_qbs()
-test.get_players_and_positions()
+#test.get_players_and_positions()
+test.get_vegas_odds()
 
